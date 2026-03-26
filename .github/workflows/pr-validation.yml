@@ -1,0 +1,154 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check linear history
+        uses: deniskv/reusable-cicd-actions/.github/actions/check-linear-history@main
+
+      - name: Check branch is up-to-date
+        uses: deniskv/reusable-cicd-actions/.github/actions/check-branch-updated@main
+        with:
+          base-branch: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Check lockfile exists
+        run: |
+          if [ ! -f "package-lock.json" ]; then
+            echo "::error::package-lock.json is missing. Run 'npm install' and commit the lockfile."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+
+  integration-tests:
+    name: Integration / E2E Tests
+    runs-on: ubuntu-latest
+    needs: validate
+    if: contains(github.event.pull_request.labels.*.name, 'verify')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run E2E tests
+        run: npm run e2e
+
+  build-release-candidate:
+    name: Build Release Candidate
+    runs-on: ubuntu-latest
+    needs: validate
+    if: contains(github.event.pull_request.labels.*.name, 'publish')
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version bump
+        uses: deniskv/reusable-cicd-actions/.github/actions/check-version-bump@main
+        with:
+          base-ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Get version from package.json
+        id: pkg
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Check if version already exists on npm
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          VERSION="${{ steps.pkg.outputs.version }}"
+
+          if npm view "${PACKAGE_NAME}@${VERSION}" version 2>/dev/null; then
+            echo "::error::Version ${VERSION} already exists on npm."
+            exit 1
+          fi
+
+          echo "[INFO] Version ${VERSION} is available."
+
+      - name: Build with dev version suffix
+        id: rc
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="${{ steps.pkg.outputs.version }}"
+          DEV_VERSION="${VERSION}-dev-${SHORT_SHA}"
+          echo "dev_version=${DEV_VERSION}" >> $GITHUB_OUTPUT
+
+          npm version "${DEV_VERSION}" --no-git-tag-version
+          npm run build
+          npm pack
+
+      - name: Upload release candidate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate
+          path: '*.tgz'
+          retention-days: 30
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `**Release candidate built successfully**\n\nVersion: \`${{ steps.rc.outputs.dev_version }}\`\nArtifact: available in workflow artifacts`
+            })

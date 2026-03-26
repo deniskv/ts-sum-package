@@ -1,0 +1,87 @@
+name: Publish Package
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'publish')
+
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Get version
+        id: pkg
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+
+      - name: Create Git tag
+        env:
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${VERSION}" -m "Release ${VERSION}"
+          git push origin "v${VERSION}"
+
+      - name: Generate changelog
+        id: changelog
+        uses: deniskv/reusable-cicd-actions/.github/actions/generate-changelog@main
+        with:
+          version: ${{ steps.pkg.outputs.version }}
+
+      - name: Create GitHub Release
+        uses: actions/github-script@v7
+        env:
+          VERSION: ${{ steps.pkg.outputs.version }}
+          CHANGELOG: ${{ steps.changelog.outputs.changelog }}
+        with:
+          script: |
+            await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${process.env.VERSION}`,
+              name: `Release ${process.env.VERSION}`,
+              body: process.env.CHANGELOG || '',
+              draft: false,
+              prerelease: false
+            });
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        env:
+          VERSION: ${{ steps.pkg.outputs.version }}
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.payload.pull_request.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `**Published version \`${process.env.VERSION}\` to npm**\n\nPackage: https://www.npmjs.com/package/@kvdenis/ts-sum-package/v/${process.env.VERSION}\nTag: \`v${process.env.VERSION}\``
+            });
