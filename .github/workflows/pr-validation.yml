@@ -83,8 +83,12 @@ jobs:
   build-release-candidate:
     name: Build Release Candidate
     runs-on: ubuntu-latest
-    needs: validate
-    if: contains(github.event.pull_request.labels.*.name, 'publish')
+    needs: [validate, integration-tests]
+    if: |
+      always() &&
+      needs.validate.result == 'success' &&
+      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
+      contains(github.event.pull_request.labels.*.name, 'publish')
  
     permissions:
       contents: read
@@ -155,3 +159,4 @@ jobs:
               repo: context.repo.repo,
               body: `**Release candidate built successfully**\n\nVersion: \`${{ steps.rc.outputs.dev_version }}\`\nArtifact: available in workflow artifacts`
             })
+ 
