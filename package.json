@@ -1,6 +1,6 @@
 {
   "name": "@kvdenis/ts-sum-package",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A simple TypeScript sum package — CI/CD demo",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,7 +14,11 @@
     "lint": "eslint src/**/*.ts",
     "e2e": "jest --config jest.e2e.config.js"
   },
-  "keywords": ["typescript", "sum", "cicd-demo"],
+  "keywords": [
+    "typescript",
+    "sum",
+    "cicd-demo"
+  ],
   "author": "deniskv",
   "license": "MIT",
   "devDependencies": {
@@ -27,7 +31,9 @@
     "ts-jest": "^29.3.0",
     "typescript": "^5.7.0"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true
