@@ -116,7 +116,7 @@ jobs:
  
       - name: Get version from package.json
         id: pkg
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
  
       - name: Check if version already exists on npm
         run: |
@@ -136,7 +136,7 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           VERSION="${{ steps.pkg.outputs.version }}"
           DEV_VERSION="${VERSION}-dev-${SHORT_SHA}"
-          echo "dev_version=${DEV_VERSION}" >> $GITHUB_OUTPUT
+          echo "dev_version=${DEV_VERSION}" >> "$GITHUB_OUTPUT"
  
           npm version "${DEV_VERSION}" --no-git-tag-version
           npm run build
